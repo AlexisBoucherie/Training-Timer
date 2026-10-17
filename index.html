@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101827">
+  <meta name="description" content="Timer d'entraînement avec alternance travail/repos et décompte vocal ou sonore.">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <title>Timer d'entraînement</title>
+  <style>
+    :root { color-scheme: dark; --bg:#101827; --panel:#1b2638; --muted:#aab7ca; --text:#f4f7fb; --green:#38d996; --orange:#ffb454; --red:#ff6b6b; --line:#334155; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:linear-gradient(160deg,#111c2d,#0b1220); color:var(--text); font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; display:flex; justify-content:center; padding: max(18px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); }
+    main { width:100%; max-width:460px; }
+    header { text-align:center; margin:8px 0 22px; }
+    h1 { margin:0; font-size:1.45rem; letter-spacing:.01em; }
+    .subtitle { margin:7px 0 0; color:var(--muted); font-size:.92rem; }
+    .panel { background:rgba(27,38,56,.96); border:1px solid var(--line); border-radius:22px; padding:18px; box-shadow:0 16px 40px #0002; }
+    .settings { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+    label { display:block; color:var(--muted); font-size:.8rem; margin-bottom:7px; }
+    input, select { width:100%; min-width:0; border:1px solid #43516a; background:#111b2b; color:var(--text); border-radius:12px; padding:12px 8px; font:inherit; font-size:1rem; text-align:center; }
+    input:focus,select:focus,button:focus-visible { outline:2px solid var(--green); outline-offset:2px; }
+    .unit { text-align:center; color:var(--muted); font-size:.72rem; margin-top:5px; }
+    .mode-row { margin-top:15px; }
+    .mode-row label { margin-bottom:7px; }
+    .display { text-align:center; padding:24px 10px 18px; }
+    .phase { text-transform:uppercase; font-size:.82rem; letter-spacing:.16em; color:var(--muted); font-weight:700; }
+    .phase.work { color:var(--green); } .phase.rest { color:var(--orange); } .phase.prep { color:#9bb7ff; } .phase.done { color:var(--green); }
+    .time { font-variant-numeric:tabular-nums; font-weight:750; letter-spacing:-.055em; font-size:clamp(4.8rem,22vw,7rem); line-height:1.12; margin:9px 0; }
+    .progress-text { color:var(--muted); font-size:.92rem; min-height:1.4em; }
+    .track { height:7px; background:#0e1726; border-radius:99px; overflow:hidden; margin:16px 2px 4px; }
+    .bar { height:100%; width:0; border-radius:99px; background:var(--green); transition:width .12s linear; }
+    .controls { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:15px; }
+    button { border:0; border-radius:14px; padding:15px 12px; font:inherit; font-weight:750; font-size:1rem; cursor:pointer; }
+    #startBtn { background:var(--green); color:#06291d; }
+    #resetBtn { background:#334155; color:var(--text); }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .hint { color:var(--muted); font-size:.78rem; line-height:1.5; text-align:center; margin:16px 6px 0; }
+    .status { min-height:1.3em; text-align:center; font-size:.82rem; color:var(--muted); margin-top:11px; }
+    .small-note { font-size:.78rem; color:var(--muted); margin:14px 3px 0; line-height:1.5; }
+    @media (max-width:360px) { .panel { padding:14px; } .settings { gap:7px; } input { padding:11px 3px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Timer d’entraînement</h1>
+    <p class="subtitle">Travail · repos · répétitions</p>
+  </header>
+
+  <section class="panel" aria-label="Paramètres de la séance">
+    <div class="settings">
+      <div>
+        <label for="workInput">Travail</label>
+        <input id="workInput" type="number" inputmode="numeric" min="1" max="3600" value="30">
+        <div class="unit">secondes</div>
+      </div>
+      <div>
+        <label for="restInput">Repos</label>
+        <input id="restInput" type="number" inputmode="numeric" min="0" max="3600" value="15">
+        <div class="unit">secondes</div>
+      </div>
+      <div>
+        <label for="repsInput">Répétitions</label>
+        <input id="repsInput" type="number" inputmode="numeric" min="1" max="999" value="8">
+        <div class="unit">cycles de travail</div>
+      </div>
+    </div>
+    <div class="mode-row">
+      <label for="soundMode">Alertes de fin de phase</label>
+      <select id="soundMode">
+        <option value="voice">Voix anglaise</option>
+        <option value="beep">Bips sonores</option>
+      </select>
+    </div>
+  </section>
+
+  <section class="panel" style="margin-top:14px" aria-live="polite">
+    <div class="display">
+      <div id="phaseLabel" class="phase prep">Prêt à démarrer</div>
+      <div id="timeDisplay" class="time">00:10</div>
+      <div id="progressText" class="progress-text">10 secondes de préparation</div>
+      <div class="track"><div id="progressBar" class="bar"></div></div>
+    </div>
+    <div class="controls">
+      <button id="startBtn">Start</button>
+      <button id="resetBtn">Reset</button>
+    </div>
+    <div id="status" class="status">L’écran restera allumé pendant la séance si le navigateur l’autorise.</div>
+  </section>
+
+  <p class="hint">Préparation : 10 s, puis travail/repos alternés. La séance s’arrête après la dernière phase de travail, sans repos final.</p>
+  <p class="small-note">Conseil : autorise le son au premier appui sur Start et garde cette page ouverte. Pour l’installation PWA et le maintien de l’écran actif, ouvre l’application depuis une adresse HTTPS.</p>
+</main>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const workInput = $('workInput'), restInput = $('restInput'), repsInput = $('repsInput');
+  const soundMode = $('soundMode'), startBtn = $('startBtn'), resetBtn = $('resetBtn');
+  const phaseLabel = $('phaseLabel'), timeDisplay = $('timeDisplay'), progressText = $('progressText');
+  const progressBar = $('progressBar'), status = $('status');
+
+  const PREP_SECONDS = 10;
+  let state = 'idle'; // idle, running, paused, done
+  let phase = 'prep'; // prep, work, rest
+  let phaseDuration = PREP_SECONDS;
+  let phaseEndAt = 0;
+  let remainingWhenPaused = PREP_SECONDS;
+  let rep = 1;
+  let ticker = null;
+  let wakeLock = null;
+  let audioContext = null;
+  let lastSpokenSecond = null;
+
+  function validSettings() {
+    const work = Number(workInput.value), rest = Number(restInput.value), reps = Number(repsInput.value);
+    const valid = Number.isInteger(work) && work >= 1 && work <= 3600 &&
+      Number.isInteger(rest) && rest >= 0 && rest <= 3600 &&
+      Number.isInteger(reps) && reps >= 1 && reps <= 999;
+    [workInput, restInput, repsInput].forEach(el => el.setCustomValidity(''));
+    if (!valid) {
+      if (!(Number.isInteger(work) && work >= 1 && work <= 3600)) workInput.setCustomValidity('Entre 1 et 3600 secondes.');
+      if (!(Number.isInteger(rest) && rest >= 0 && rest <= 3600)) restInput.setCustomValidity('Entre 0 et 3600 secondes.');
+      if (!(Number.isInteger(reps) && reps >= 1 && reps <= 999)) repsInput.setCustomValidity('Entre 1 et 999 répétitions.');
+      (workInput.validity.valid ? restInput.validity.valid ? repsInput : restInput : workInput).reportValidity();
+      return null;
+    }
+    return {work, rest, reps};
+  }
+
+  function fmt(seconds) {
+    seconds = Math.max(0, Math.ceil(seconds));
+    const m = Math.floor(seconds / 60), s = seconds % 60;
+    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+
+  function speak(text) {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    utterance.rate = 1.05;
+    utterance.pitch = 1;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function ensureAudio() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx && !audioContext) audioContext = new Ctx();
+      if (audioContext && audioContext.state === 'suspended') audioContext.resume();
+    } catch (_) {}
+  }
+
+  function beep(frequency=880, duration=0.13, volume=0.22) {
+    if (!audioContext) return;
+    try {
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = frequency;
+      gain.gain.setValueAtTime(volume, audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration);
+      osc.connect(gain); gain.connect(audioContext.destination);
+      osc.start(); osc.stop(audioContext.currentTime + duration);
+    } catch (_) {}
+  }
+
+  function cue(text, kind='count') {
+    if (soundMode.value === 'voice') speak(text);
+    else if (kind === 'start') { beep(1046, .16); setTimeout(() => beep(1318,.2), 180); }
+    else if (kind === 'stop') { beep(660, .16); setTimeout(() => beep(440,.22), 180); }
+    else beep(820, .09, .17);
+  }
+
+  async function acquireWakeLock() {
+    if (!('wakeLock' in navigator) || state !== 'running') {
+      if (!('wakeLock' in navigator)) status.textContent = 'Maintien de l’écran non pris en charge par ce navigateur.';
+      return;
+    }
+    try {
+      if (!wakeLock) {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+      }
+      status.textContent = 'Écran maintenu actif pendant la séance.';
+    } catch (_) {
+      status.textContent = 'Le téléphone n’a pas autorisé le maintien de l’écran. Garde l’écran actif manuellement.';
+    }
+  }
+
+  async function releaseWakeLock() {
+    if (wakeLock) {
+      try { await wakeLock.release(); } catch (_) {}
+      wakeLock = null;
+    }
+  }
+
+  function setPhase(next, duration) {
+    phase = next;
+    phaseDuration = duration;
+    phaseEndAt = Date.now() + duration * 1000;
+    lastSpokenSecond = null;
+    if (next === 'prep') {
+      phaseLabel.textContent = 'Préparation';
+      phaseLabel.className = 'phase prep';
+      progressText.textContent = 'Prépare-toi…';
+    } else if (next === 'work') {
+      phaseLabel.textContent = `Travail · ${rep}`;
+      phaseLabel.className = 'phase work';
+      progressText.textContent = `Répétition ${rep} sur ${Number(repsInput.value)}`;
+    } else {
+      phaseLabel.textContent = 'Repos';
+      phaseLabel.className = 'phase rest';
+      progressText.textContent = `Avant la répétition ${rep + 1}`;
+    }
+  }
+
+  function start() {
+    if (state === 'running') {
+      remainingWhenPaused = Math.max(0, (phaseEndAt - Date.now()) / 1000);
+      state = 'paused';
+      clearInterval(ticker); ticker = null;
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      releaseWakeLock();
+      startBtn.textContent = 'Reprendre';
+      status.textContent = 'Séance en pause.';
+      render(remainingWhenPaused);
+      return;
+    }
+
+    if (state === 'idle' || state === 'done') {
+      const settings = validSettings();
+      if (!settings) return;
+      rep = 1;
+      setPhase('prep', PREP_SECONDS);
+      remainingWhenPaused = PREP_SECONDS;
+    } else if (state === 'paused') {
+      phaseEndAt = Date.now() + remainingWhenPaused * 1000;
+      lastSpokenSecond = null;
+    }
+
+    ensureAudio();
+    state = 'running';
+    startBtn.textContent = 'Pause';
+    acquireWakeLock();
+    tick();
+    clearInterval(ticker);
+    ticker = setInterval(tick, 100);
+  }
+
+  function advancePhase() {
+    if (phase === 'prep') {
+      setPhase('work', Number(workInput.value));
+      cue('start', 'start');
+      return;
+    }
+    if (phase === 'work') {
+      if (rep >= Number(repsInput.value)) {
+        finish();
+        return;
+      }
+      if (Number(restInput.value) > 0) {
+        setPhase('rest', Number(restInput.value));
+        cue('stop', 'stop');
+      } else {
+        rep++;
+        setPhase('work', Number(workInput.value));
+        cue('start', 'start');
+      }
+      return;
+    }
+    if (phase === 'rest') {
+      rep++;
+      setPhase('work', Number(workInput.value));
+      cue('start', 'start');
+    }
+  }
+
+  function finish() {
+    state = 'done';
+    clearInterval(ticker); ticker = null;
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    cue('Finished!', 'stop');
+    phaseLabel.textContent = 'Séance terminée';
+    phaseLabel.className = 'phase done';
+    timeDisplay.textContent = '00:00';
+    progressText.textContent = `${Number(repsInput.value)} répétitions réalisées`;
+    progressBar.style.width = '100%';
+    startBtn.textContent = 'Recommencer';
+    status.textContent = 'Bien joué !';
+    releaseWakeLock();
+  }
+
+  function tick() {
+    if (state !== 'running') return;
+    let remaining = (phaseEndAt - Date.now()) / 1000;
+
+    // Use the real deadline so small browser delays do not accumulate.
+    while (remaining <= 0 && state === 'running') {
+      advancePhase();
+      if (state !== 'running') return;
+      remaining = (phaseEndAt - Date.now()) / 1000;
+      // Avoid an infinite loop if a phase has zero duration.
+      if (phaseDuration <= 0) break;
+    }
+
+    if (state !== 'running') return;
+    remaining = Math.max(0, remaining);
+    render(remaining);
+
+    const whole = Math.ceil(remaining);
+    if (whole <= 5 && whole >= 1 && whole !== lastSpokenSecond) {
+      lastSpokenSecond = whole;
+      if (soundMode.value === 'voice') {
+        speak(['', 'one', 'two', 'three', 'four', 'five'][whole]);
+      } else {
+        beep(whole === 1 ? 1100 : 820, whole === 1 ? .16 : .08);
+      }
+    }
+  }
+
+  function render(remaining) {
+    timeDisplay.textContent = fmt(remaining);
+    const pct = phaseDuration > 0 ? Math.max(0, Math.min(100, (1 - remaining / phaseDuration) * 100)) : 100;
+    progressBar.style.width = `${pct}%`;
+    progressBar.style.background = phase === 'rest' ? 'var(--orange)' : phase === 'prep' ? '#9bb7ff' : 'var(--green)';
+    if (phase === 'prep') progressText.textContent = 'Prépare-toi…';
+    else if (phase === 'work') progressText.textContent = `Répétition ${rep} sur ${Number(repsInput.value)}`;
+    else progressText.textContent = `Avant la répétition ${rep + 1}`;
+  }
+
+  function reset() {
+    clearInterval(ticker); ticker = null;
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    state = 'idle'; phase = 'prep'; phaseDuration = PREP_SECONDS;
+    remainingWhenPaused = PREP_SECONDS; rep = 1; lastSpokenSecond = null;
+    phaseLabel.textContent = 'Prêt à démarrer';
+    phaseLabel.className = 'phase prep';
+    timeDisplay.textContent = '00:10';
+    progressText.textContent = '10 secondes de préparation';
+    progressBar.style.width = '0%'; progressBar.style.background = '#9bb7ff';
+    startBtn.textContent = 'Start';
+    status.textContent = 'L’écran restera allumé pendant la séance si le navigateur l’autorise.';
+    releaseWakeLock();
+  }
+
+  startBtn.addEventListener('click', start);
+  resetBtn.addEventListener('click', reset);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && state === 'running') acquireWakeLock();
+  });
+  [workInput, restInput, repsInput, soundMode].forEach(el => el.addEventListener('input', () => {
+    if (state === 'idle' || state === 'done') reset();
+  }));
+
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+  }
+})();
+</script>
+</body>
+</html>
